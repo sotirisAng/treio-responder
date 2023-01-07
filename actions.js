@@ -1,16 +1,15 @@
 const {
     getMessages,
-    conversationMessages,
-    messageAnswers,
     getMessageFiles,
     createMessage,
     createMessageXMLFile,
     createMessagePdfFile,
     saveSubmittedMessage,
-    lookForAction
+    lookForAction,
+    unansweredCases
 } = require("./messageHelper");
-const {parseXml, updateXml} = require("./xmlHelper");
-const {readFile} = require("fs/promises");
+const { parseXml, updateXml } = require("./xmlHelper");
+const { readFile } = require("fs/promises");
 const moment = require("moment");
 const uuid = require("uuid");
 
@@ -21,45 +20,50 @@ const ANNEX_B_XML = 'Eio_AnnexB_Submission.xml'
 async function sendResponse(req, res) {
     try {
         const messages = await getMessages();
-        const lastReceivedMessage = lookForAction('Eio_AnnexA_Submission', messages)
-        const conversation = conversationMessages(lastReceivedMessage.conversationId, messages)
+        const annexAMessages = lookForAction('Eio_AnnexA_Submission', messages)
 
-        const answers = messageAnswers(conversation, lastReceivedMessage)
-        if (answers.length > 0) {
+        const unanswered_cases = unansweredCases(annexAMessages, messages)
+
+        if (unanswered_cases.length === 0) {
             return res.send('All cases has been answered')
         }
 
-        const messageFiles = await getMessageFiles(lastReceivedMessage.files.files);
-        const contentBase64Xml = messageFiles[ANNEX_A_XML]
-        const contentXml = (await Buffer.from(contentBase64Xml, 'base64')).toString('utf8')
-        let ids = await parseXml(contentXml)
-        let responseXmlContent = (await readFile("fakeFiles/content.xml")).toString('utf8')
-        const newXml = await updateXml(responseXmlContent,null , ids["globalCaseId"], ids["formId"], ids["subject"])
+        for (let message of unanswered_cases) {
+            const messageFiles = await getMessageFiles(message.files.files);
+            const contentBase64Xml = messageFiles[ANNEX_A_XML]
+            const contentXml = (await Buffer.from(contentBase64Xml, 'base64')).toString('utf8')
+            let ids = await parseXml(contentXml)
+            let responseXmlContent = (await readFile("fakeFiles/content.xml")).toString('utf8')
+            const newXml = await updateXml(responseXmlContent, null, ids["globalCaseId"], ids["formId"], ids["subject"])
 
-        const responseMessage = await createMessage(lastReceivedMessage.conversationId, "Eio_AnnexB_Submission")
-        if (![200, 201].includes(responseMessage.status)) {
-            return res.send('Error creating message')
+            const responseMessage = await createMessage(message.conversationId, "Eio_AnnexB_Submission")
+            if (![200, 201].includes(responseMessage.status)) {
+                return res.send('Error creating message')
+            }
+
+            const uploadFile = await createMessageXMLFile(ANNEX_B_XML, newXml, responseMessage.data.storageInfo)
+            if (![200, 201].includes(uploadFile.status)) {
+                return res.send('Error uploading xml file')
+            }
+
+            const uploadPdfFile = await createMessagePdfFile(responseMessage.data.id, responseMessage.data.storageInfo)
+            if (![200, 201].includes(uploadPdfFile.status)) {
+                return res.send('Error uploading pdf file')
+            }
+
+            const savedMessage = await saveSubmittedMessage(responseMessage.data.storageInfo)
+            if (![200, 201].includes(savedMessage.status)) {
+                res.send('Error on saving response message!')
+            }
+
+            console.log('sent')
+
         }
 
-        const uploadFile = await createMessageXMLFile(ANNEX_B_XML, newXml, responseMessage.data.storageInfo)
-        if (![200, 201].includes(uploadFile.status)) {
-            return res.send('Error uploading xml file')
-        }
-
-        const uploadPdfFile = await createMessagePdfFile(responseMessage.data.id, responseMessage.data.storageInfo)
-        if (![200, 201].includes(uploadPdfFile.status)) {
-            return res.send('Error uploading pdf file')
-        }
-
-        const savedMessage = await saveSubmittedMessage(responseMessage.data.storageInfo)
-        if (![200, 201].includes(savedMessage.status)) {
-            res.send('Error on saving response message!')
-        }
-
-        res.send('Response message sent!')
+        res.send('Response messages sent!')
 
     } catch (error) {
-        res.send('Error sending response', error)
+        res.send('Error sending response')
         console.log(error);
     }
 }

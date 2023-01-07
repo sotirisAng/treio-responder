@@ -1,13 +1,25 @@
 const axios = require("axios");
-const {readFile} = require("fs/promises");
-const {promises: fs} = require("fs");
+const { readFile } = require("fs/promises");
+const { promises: fs } = require("fs");
 require('dotenv').config()
-const {REST_SERVICE_URL, NODE_ENV, ORIGINAL_SENDER, FINAL_RECIPIENT} = process.env
+const moment = require("moment");
+const { REST_SERVICE_URL, NODE_ENV, ORIGINAL_SENDER, FINAL_RECIPIENT } = process.env
 
 
 const lookForAction = (action, data) => {
-    const filteredData = data.filter(message => message.action === action && message.messageStatus === "CONFIRMED" && message.finalRecipient === FINAL_RECIPIENT).sort((a, b) => a.created - b.created)
-    return filteredData[0]
+    const today = moment()
+    let filteredData = data.filter(message =>
+        message.action === action && message.messageStatus === "CONFIRMED" && message.finalRecipient === ORIGINAL_SENDER && message.created.split('T')[0] === today.format('YYYY-MM-DD'))
+    filteredData = filteredData.sort((a, b) => a.created - b.created)
+    return filteredData
+}
+
+function unansweredCases(messages, allMessages) {
+    return messages.filter(message => {
+        const conversation = conversationMessages(message.conversationId, allMessages)
+        const answers = messageAnswers(conversation, message)
+        return answers.length === 0
+    })
 }
 
 async function getMessages() {
@@ -106,5 +118,6 @@ module.exports = {
     createMessageXMLFile,
     createMessagePdfFile,
     saveSubmittedMessage,
-    lookForAction
+    lookForAction,
+    unansweredCases
 }
