@@ -8,8 +8,9 @@ const { REST_SERVICE_URL, NODE_ENV, ORIGINAL_SENDER, FINAL_RECIPIENT } = process
 
 const lookForAction = (action, data) => {
     const today = moment()
+    const yesterday = moment().subtract(1, 'days')
     let filteredData = data.filter(message =>
-        message.action === action && message.messageStatus === "CONFIRMED" && message.finalRecipient === ORIGINAL_SENDER && message.created.split('T')[0] === today.format('YYYY-MM-DD'))
+        message.action === action && message.messageStatus === "CONFIRMED" && message.finalRecipient === ORIGINAL_SENDER && (message.created.split('T')[0] === today.format('YYYY-MM-DD') || message.created.split('T')[0] === yesterday.format('YYYY-MM-DD')))
     filteredData = filteredData.sort((a, b) => a.created - b.created)
     return filteredData
 }
@@ -73,8 +74,9 @@ async function createMessage(conversationId, action) {
     return await axios.post(`${REST_SERVICE_URL}/saveMessage`, payload)
 }
 
-async function pdfFileContent() {
-    return (await fs.readFile('fakeFiles/Test_signed.pdf')).toString('base64')
+async function pdfFileContent(signedPdf) {
+    const filename = signedPdf ? "Test_signed.pdf" : "Test.pdf"
+    return (await fs.readFile(`fakeFiles/${filename}`)).toString('base64')
 }
 
 async function createMessageXMLFile(fileName, fileContent, storageLocation) {
@@ -89,9 +91,9 @@ async function createMessageXMLFile(fileName, fileContent, storageLocation) {
     return await axios.post(`${REST_SERVICE_URL}/uploadMessageFile`, payload)
 }
 
-async function createMessagePdfFile(messageId, storageLocation) {
+async function createMessagePdfFile(messageId, storageLocation, signedPdf) {
 
-    const fileContentBase64 = await pdfFileContent()
+    const fileContentBase64 = await pdfFileContent(signedPdf)
 
     const payload = {
         "fileName": "Document.pdf",
